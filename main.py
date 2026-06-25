@@ -1,16 +1,16 @@
 import pygame
 import random
+import asyncio
 import os
-
-# ==========================================
-# INITIALIZATION
-# ==========================================
 
 pygame.init()
 
+# ==========================================
+# SETTINGS
+# ==========================================
+
 WIDTH = 800
 HEIGHT = 600
-
 FPS = 60
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -22,11 +22,48 @@ clock = pygame.time.Clock()
 # LOAD ASSETS
 # ==========================================
 
-ASSET_DIR = "assets"
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Desktop:
+# main.py
+# assets/background.png
+#
+# Pygbag:
+# assets/main.py
+# assets/assets/background.png
+
+POSSIBLE_ASSET_DIRS = [
+    os.path.join(BASE_DIR, "assets"),
+    os.path.join(BASE_DIR, "assets", "assets"),
+    BASE_DIR
+]
+
+ASSET_DIR = None
+
+for folder in POSSIBLE_ASSET_DIRS:
+
+    if os.path.exists(
+        os.path.join(folder, "background.png")
+    ):
+        ASSET_DIR = folder
+        break
+
+if ASSET_DIR is None:
+    raise FileNotFoundError(
+        "Asset folder not found."
+    )
+
+print("ASSET_DIR =", ASSET_DIR)
 
 background = pygame.image.load(
     os.path.join(ASSET_DIR, "background.png")
 ).convert()
+
+background = pygame.transform.scale(
+    background,
+    (WIDTH, HEIGHT)
+)
 
 pig_img = pygame.image.load(
     os.path.join(ASSET_DIR, "piggybank.png")
@@ -47,7 +84,6 @@ building_bottom_img = pygame.image.load(
 gameover_img = pygame.image.load(
     os.path.join(ASSET_DIR, "gameover.png")
 ).convert_alpha()
-
 # ==========================================
 # GAME SETTINGS
 # ==========================================
@@ -59,9 +95,10 @@ BUILDING_SPEED = 4
 BUILDING_GAP = 200
 
 FONT = pygame.font.SysFont("arial", 32)
+BIG_FONT = pygame.font.SysFont("arial", 50)
 
 # ==========================================
-# PIGGY BANK
+# PLAYER
 # ==========================================
 
 class PiggyBank:
@@ -73,10 +110,9 @@ class PiggyBank:
             (80, 80)
         )
 
-        self.rect = self.image.get_rect()
-
-        self.rect.x = 150
-        self.rect.y = HEIGHT // 2
+        self.rect = self.image.get_rect(
+            center=(150, HEIGHT // 2)
+        )
 
         self.velocity = 0
 
@@ -89,6 +125,7 @@ class PiggyBank:
         self.rect.y += self.velocity
 
     def draw(self):
+
         screen.blit(self.image, self.rect)
 
 # ==========================================
@@ -103,12 +140,12 @@ class Building:
 
         self.x = WIDTH
 
-        self.gap_y = random.randint(150, 450)
-
-        self.passed = False
+        self.gap_y = random.randint(170, 430)
 
         self.top_height = self.gap_y - BUILDING_GAP // 2
         self.bottom_y = self.gap_y + BUILDING_GAP // 2
+
+        self.passed = False
 
         self.top_img = pygame.transform.scale(
             building_top_img,
@@ -147,6 +184,7 @@ class Building:
         screen.blit(self.bottom_img, (self.x, self.bottom_y))
 
     def offscreen(self):
+
         return self.x < -self.WIDTH
 
 # ==========================================
@@ -179,13 +217,14 @@ class Coin:
             screen.blit(self.image, self.rect)
 
 # ==========================================
-# GAME CLASS
+# GAME
 # ==========================================
 
 class Game:
 
     def __init__(self):
 
+        self.highscore = 0
         self.reset()
 
     def reset(self):
@@ -207,8 +246,9 @@ class Game:
 
         self.buildings.append(building)
 
-        coin = Coin(building.x, building.gap_y)
-        self.coins.append(coin)
+        self.coins.append(
+            Coin(building.x, building.gap_y)
+        )
 
     def update(self):
 
@@ -219,12 +259,11 @@ class Game:
 
         self.spawn_timer += 1
 
-        if self.spawn_timer > 90:
+        if self.spawn_timer >= 90:
 
             self.spawn_building()
             self.spawn_timer = 0
 
-        # Buildings
         for building in self.buildings:
             building.update()
 
@@ -233,7 +272,6 @@ class Game:
             if not b.offscreen()
         ]
 
-        # Coins
         for coin in self.coins:
             coin.update()
 
@@ -246,44 +284,42 @@ class Game:
 
     def check_collisions(self):
 
-        # Screen bounds
         if self.player.rect.top < 0:
-            self.game_over = True
+            self.end_game()
 
         if self.player.rect.bottom > HEIGHT:
-            self.game_over = True
+            self.end_game()
 
-        # Buildings
         for building in self.buildings:
 
-            if self.player.rect.colliderect(
-                building.top_rect
-            ):
-                self.game_over = True
+            if self.player.rect.colliderect(building.top_rect):
+                self.end_game()
 
-            if self.player.rect.colliderect(
-                building.bottom_rect
-            ):
-                self.game_over = True
+            if self.player.rect.colliderect(building.bottom_rect):
+                self.end_game()
 
             if (
                 not building.passed
                 and building.x + building.WIDTH < self.player.rect.x
             ):
-
                 building.passed = True
                 self.score += 1
 
-        # Coins
         for coin in self.coins:
 
             if (
                 not coin.collected
                 and self.player.rect.colliderect(coin.rect)
             ):
-
                 coin.collected = True
                 self.score += 5
+
+    def end_game(self):
+
+        self.game_over = True
+
+        if self.score > self.highscore:
+            self.highscore = self.score
 
     def draw(self):
 
@@ -298,84 +334,118 @@ class Game:
         self.player.draw()
 
         score_text = FONT.render(
-            f"Score: {self.score}",
+            f"Score : {self.score}",
+            True,
+            (0, 0, 0)
+        )
+
+        best_text = FONT.render(
+            f"Best : {self.highscore}",
             True,
             (0, 0, 0)
         )
 
         screen.blit(score_text, (20, 20))
+        screen.blit(best_text, (20, 60))
 
         if self.game_over:
 
-            box = pygame.Surface((500, 250))
-            box.set_alpha(220)
-            box.fill((255, 255, 255))
+            overlay = pygame.Surface((WIDTH, HEIGHT))
+            overlay.set_alpha(180)
+            overlay.fill((255, 255, 255))
 
-            screen.blit(
-                box,
-                (150, 180)
-            )
+            screen.blit(overlay, (0, 0))
 
-            gameover_scaled = pygame.transform.scale(
-                gameover_img,
-                (350, 120)
+            title = BIG_FONT.render(
+                "GAME OVER",
+                True,
+                (200, 0, 0)
             )
 
             screen.blit(
-                gameover_scaled,
-                (225, 190)
+                title,
+                (
+                    WIDTH//2 - title.get_width()//2,
+                    180
+                )
             )
 
             final_text = FONT.render(
-                f"Final Score: {self.score}",
+                f"Final Score : {self.score}",
                 True,
                 (0, 0, 0)
             )
 
             restart_text = FONT.render(
-                "Press R to Restart",
+                "Press R or Click",
                 True,
                 (0, 0, 0)
             )
 
-            screen.blit(final_text, (280, 340))
-            screen.blit(restart_text, (240, 390))
+            screen.blit(
+                final_text,
+                (
+                    WIDTH//2 - final_text.get_width()//2,
+                    280
+                )
+            )
+
+            screen.blit(
+                restart_text,
+                (
+                    WIDTH//2 - restart_text.get_width()//2,
+                    340
+                )
+            )
 
 # ==========================================
-# MAIN GAME
+# MAIN LOOP
 # ==========================================
 
-game = Game()
+async def main():
 
-running = True
+    game = Game()
 
-while running:
+    running = True
 
-    clock.tick(FPS)
+    while running:
 
-    for event in pygame.event.get():
+        clock.tick(FPS)
 
-        if event.type == pygame.QUIT:
-            running = False
+        for event in pygame.event.get():
 
-        if event.type == pygame.KEYDOWN:
-
-            if event.key == pygame.K_ESCAPE:
+            if event.type == pygame.QUIT:
                 running = False
 
-            if event.key == pygame.K_SPACE:
+            if event.type == pygame.KEYDOWN:
 
-                if not game.game_over:
-                    game.player.jump()
+                if event.key == pygame.K_ESCAPE:
+                    running = False
 
-            if event.key == pygame.K_r:
+                if event.key == pygame.K_SPACE:
+
+                    if not game.game_over:
+                        game.player.jump()
+
+                if event.key == pygame.K_r:
+
+                    if game.game_over:
+                        game.reset()
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
 
                 if game.game_over:
                     game.reset()
+                else:
+                    game.player.jump()
 
-    game.update()
-    game.draw()
+        game.update()
+        game.draw()
 
-    pygame.display.flip()
+        pygame.display.flip()
 
-pygame.quit()
+        await asyncio.sleep(0)
+
+    pygame.quit()
+
+asyncio.run(main())
